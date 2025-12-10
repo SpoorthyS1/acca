@@ -65,14 +65,14 @@ const InputPanel: React.FC<InputPanelProps> = ({ onAnalyze, isAnalyzing }) => {
                 <span className="w-6 h-6 rounded-full bg-slate-700 text-white flex items-center justify-center mr-2 text-xs">1</span>
                 Project Location
             </h3>
-            <p className="text-xs text-slate-500 mb-4">ACCA uses your location to identify specific building codes (e.g., California Residential Code vs. Standard IRC).</p>
+            <p className="text-xs text-slate-500 mb-4">ACCA uses your location to apply strict local building codes (e.g., "Mumbai, India", "London, UK", "New York, USA").</p>
             <div className="relative">
                 <MapPin className="absolute top-3 left-3 w-4 h-4 text-slate-500" />
                 <input 
                     type="text"
                     value={location}
                     onChange={(e) => setLocation(e.target.value)}
-                    placeholder="e.g. Austin, TX, USA"
+                    placeholder="City, State, Country"
                     className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2 pl-9 pr-3 text-slate-200 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
                 />
             </div>
@@ -81,7 +81,7 @@ const InputPanel: React.FC<InputPanelProps> = ({ onAnalyze, isAnalyzing }) => {
                 disabled={!location.trim()}
                 className="mt-4 w-full bg-slate-700 hover:bg-slate-600 text-white text-sm font-bold py-2 px-4 rounded transition-colors disabled:opacity-50"
             >
-                Next Step
+                Confirm Location
             </button>
         </div>
 

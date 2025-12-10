@@ -15,9 +15,13 @@ export const analyzeDesign = async (request: AnalysisRequest): Promise<Complianc
   
   // 1. Establish Location Context & Code Research
   parts.push({
-      text: `PHASE 1: LOCATION & CODE RESEARCH
-      Target Location: "${request.location || "Not Specified"}"
-      ACTION: Use 'googleSearch' to identify the specific residential building code, zoning setbacks, and egress requirements for this location.`
+      text: `PHASE 1: DYNAMIC LOCATION & CODE IDENTIFICATION
+      User Location Input: "${request.location || "Not Specified"}"
+      
+      ACTION: 
+      1. Extract the City, State, and Country.
+      2. Research the SPECIFIC building codes for this location (e.g. "NBC 2016", "IBC 2021", "Dubai Building Code").
+      3. Use these exact codes for the compliance audit.`
   });
 
   // 2. Input Processing (Image or Text)
@@ -29,30 +33,27 @@ export const analyzeDesign = async (request: AnalysisRequest): Promise<Complianc
       }
     });
     parts.push({
-      text: `PHASE 2: BLUEPRINT EXTRACTION (OCR)
-      ACTION: Analyze the uploaded image. Extract the EXACT geometry.
-      - Treat the image as ground truth for the 'originalBlueprint'.
-      - Identify all rooms, doors (with swings), windows, and furniture.
-      - Estimate dimensions in FEET based on standard cues (e.g., a standard door is 3ft wide).`
+      text: `PHASE 2: PRECISION BLUEPRINT ANALYSIS
+      ACTION: Analyze the uploaded image with EXTREME ACCURACY.
+      - Extract exact measurements for rooms, doors, and windows.
+      - Identify structural elements and furniture.
+      - Map this data to the 'originalBlueprint' JSON structure.`
     });
   } else if (request.textPrompt) {
     parts.push({
-      text: `PHASE 2: GENERATIVE DESIGN
+      text: `PHASE 2: GENERATIVE ARCHITECTURAL DESIGN
       Design Brief: "${request.textPrompt}"
-      ACTION: Create a floor plan that meets these requirements.
-      - Introduce 1-2 plausible code violations in the 'originalBlueprint' (e.g., door swinging into person, window too small) to demonstrate the audit capability.`
+      ACTION: Generate a detailed floor plan that meets the brief and adheres to the local codes identified in Phase 1.`
     });
   }
 
   // 3. Audit & Correction
   parts.push({
-      text: `PHASE 3: COMPLIANCE AUDIT & CORRECTION
+      text: `PHASE 3: COMPLIANCE AUDIT & 3D MODELING
       ACTION:
-      1. Compare 'originalBlueprint' against the found Building Code.
-      2. List specific violations in the 'violations' array.
-      3. Generate 'correctedBlueprint' by modifying ONLY the non-compliant elements (e.g., resize window, move wall for setback).
-      
-      OUTPUT: Produce the FINAL JSON object strictly adhering to the 'ComplianceResult' interface.`
+      1. Compare the 'originalBlueprint' against the identified local codes (Setbacks, Room Sizes, Egress).
+      2. Create a 'correctedBlueprint' fixing any violations.
+      3. Generate the final JSON object containing 2D, 3D, and Compliance data.`
   });
 
   try {
