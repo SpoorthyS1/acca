@@ -1,0 +1,5 @@
+{
+  "name": "ACCA - Architectural Code Compliance Agent",
+  "description": "An AI-powered architectural compliance agent that generates blueprints, 3D models, and performs real-time IRC 2021 code audits.",
+  "requestFramePermissions": []
+}
