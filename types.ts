@@ -1,3 +1,4 @@
+
 export interface Feature {
   id: string;
   type: 'window' | 'door';
@@ -6,6 +7,16 @@ export interface Feature {
   width: number;
   height: number;
   sillHeight?: number; // for windows
+}
+
+export interface Furniture {
+  id: string;
+  type: 'bed' | 'sofa' | 'table' | 'toilet' | 'sink' | 'counter';
+  x: number; // relative to room
+  y: number; // relative to room
+  width: number;
+  depth: number;
+  rotation: number;
 }
 
 export interface Room {
@@ -17,6 +28,7 @@ export interface Room {
   height: number; // in feet
   type: 'bedroom' | 'bathroom' | 'living' | 'kitchen' | 'garage' | 'other';
   features: Feature[];
+  furniture?: Furniture[];
 }
 
 export interface Blueprint {

@@ -1,7 +1,8 @@
-import React, { Suspense, useState } from 'react';
+
+import React, { Suspense, useState, useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
-import { OrbitControls, Center, Text, Sky, ContactShadows } from '@react-three/drei';
-import { Blueprint, Room } from '../types';
+import { OrbitControls, Center, Text, Environment, ContactShadows, Grid } from '@react-three/drei';
+import { Blueprint, Room, Feature } from '../types';
 import * as THREE from 'three';
 
 interface Model3DProps {
@@ -11,215 +12,262 @@ interface Model3DProps {
 const WALL_THICKNESS = 0.5;
 const WALL_HEIGHT = 9;
 
-const RoomStructure: React.FC<{ room: Room; x: number; y: number }> = ({ room, x, y }) => {
-  const renderWall = (wallType: 'top' | 'bottom' | 'left' | 'right') => {
-    const features = room.features?.filter(f => f.wall === wallType).sort((a, b) => a.offset - b.offset) || [];
-    
-    let wallLength = (wallType === 'top' || wallType === 'bottom') ? room.width : room.height;
-    
-    // Position/Rotation math
-    let posX = x + room.width / 2;
-    let posZ = y + room.height / 2;
-    let rotY = 0;
+// --- Furniture Assets (Procedural Geometries) ---
+const Bed = () => (
+    <group position={[2, 0, 3]}>
+        <mesh position={[0, 1, 0]} castShadow>
+            <boxGeometry args={[4, 2, 6]} />
+            <meshStandardMaterial color="#e2e8f0" />
+        </mesh>
+        <mesh position={[0, 2.1, -2]} castShadow>
+            <boxGeometry args={[4, 0.5, 1.5]} />
+            <meshStandardMaterial color="#94a3b8" />
+        </mesh>
+        <mesh position={[0, 2.05, 1]} castShadow>
+            <boxGeometry args={[3.8, 0.1, 5]} />
+            <meshStandardMaterial color="#f8fafc" />
+        </mesh>
+    </group>
+);
 
-    if (wallType === 'top') { posZ = y; rotY = 0; }
-    if (wallType === 'bottom') { posZ = y + room.height; rotY = 0; }
-    if (wallType === 'left') { posX = x; rotY = Math.PI / 2; }
-    if (wallType === 'right') { posX = x + room.width; rotY = Math.PI / 2; }
+const Sofa = () => (
+    <group position={[2, 0, 2]}>
+        <mesh position={[0, 1, 0]} castShadow>
+            <boxGeometry args={[6, 1.2, 2.5]} />
+            <meshStandardMaterial color="#475569" />
+        </mesh>
+        <mesh position={[0, 2, -1]} castShadow>
+             <boxGeometry args={[6, 1.5, 0.5]} />
+             <meshStandardMaterial color="#334155" />
+        </mesh>
+         <mesh position={[-2.75, 1.6, 0]} castShadow>
+             <boxGeometry args={[0.5, 1, 2.5]} />
+             <meshStandardMaterial color="#334155" />
+        </mesh>
+         <mesh position={[2.75, 1.6, 0]} castShadow>
+             <boxGeometry args={[0.5, 1, 2.5]} />
+             <meshStandardMaterial color="#334155" />
+        </mesh>
+    </group>
+);
 
-    return (
-        <group position={[posX, 0, posZ]} rotation={[0, rotY, 0]}>
-            {features.length === 0 ? (
-                 <mesh position={[0, WALL_HEIGHT/2, 0]} castShadow receiveShadow>
-                    <boxGeometry args={[wallLength, WALL_HEIGHT, WALL_THICKNESS]} />
+const KitchenUnit = ({ width }: { width: number }) => (
+    <group position={[width/2, 0, 1]}>
+         <mesh position={[0, 1.5, 0]} castShadow>
+             <boxGeometry args={[width, 3, 2]} />
+             <meshStandardMaterial color="#cbd5e1" roughness={0.2} />
+         </mesh>
+         <mesh position={[0, 3.01, 0]}>
+             <planeGeometry args={[width, 2]} rotation={[-Math.PI/2, 0, 0]} />
+             <meshStandardMaterial color="#1e293b" roughness={0.1} metalness={0.5} />
+         </mesh>
+    </group>
+)
+
+const ProceduralFurniture: React.FC<{ room: Room }> = ({ room }) => {
+    // Simple logic to place furniture based on room type
+    if (room.type === 'bedroom') return <group position={[room.width/2 - 2, 0, room.height/2 - 3]}><Bed /></group>;
+    if (room.type === 'living') return <group position={[room.width/2 - 3, 0, room.height/2]} rotation={[0, Math.PI/4, 0]}><Sofa /></group>;
+    if (room.type === 'kitchen') return <group position={[0, 0, 0]}><KitchenUnit width={room.width} /></group>;
+    return null;
+};
+
+// --- Wall Generation Logic ---
+// Instead of CSG (which is heavy), we build walls from segments:
+// Left of window, Right of window, Header (above), Sill (below).
+const SmartWall: React.FC<{ length: number, height: number, features: Feature[] }> = ({ length, height, features }) => {
+    
+    // 1. Sort features by position
+    const sortedFeatures = [...features].sort((a, b) => a.offset - b.offset);
+    
+    // 2. Create segments
+    const segments = [];
+    let cursor = 0;
+
+    sortedFeatures.forEach((f, idx) => {
+        // Solid wall before feature
+        if (f.offset > cursor) {
+            const width = f.offset - cursor;
+            segments.push(
+                <mesh key={`seg-${idx}`} position={[cursor + width/2 - length/2, height/2, 0]} castShadow receiveShadow>
+                    <boxGeometry args={[width, height, WALL_THICKNESS]} />
                     <meshStandardMaterial color="#e2e8f0" />
                 </mesh>
-            ) : (
-                <>
-                {(() => {
-                    const parts = [];
-                    let c = 0;
-                    const zOffset = 0;
+            );
+        }
 
-                    for (let i = 0; i < features.length; i++) {
-                        const f = features[i];
-                        // Left of feature
-                        if (f.offset > c) {
-                            const w = Math.max(0, f.offset - c);
-                            if (w > 0) {
-                                parts.push(
-                                    <mesh key={`l-${i}`} position={[c + w/2 - wallLength/2, WALL_HEIGHT/2, zOffset]} castShadow>
-                                        <boxGeometry args={[w, WALL_HEIGHT, WALL_THICKNESS]} />
-                                        <meshStandardMaterial color="#cbd5e1" />
-                                    </mesh>
-                                );
-                            }
-                        }
-                        
-                        // Above feature
-                        const headH = WALL_HEIGHT - (f.height + (f.sillHeight||0));
-                        if (headH > 0) {
-                             parts.push(
-                                <mesh key={`t-${i}`} position={[f.offset + f.width/2 - wallLength/2, WALL_HEIGHT - headH/2, zOffset]} castShadow>
-                                    <boxGeometry args={[f.width, headH, WALL_THICKNESS]} />
-                                    <meshStandardMaterial color="#cbd5e1" />
-                                </mesh>
-                            )
-                        }
-                        // Below feature
-                        if (f.sillHeight && f.sillHeight > 0) {
-                             parts.push(
-                                <mesh key={`b-${i}`} position={[f.offset + f.width/2 - wallLength/2, f.sillHeight/2, zOffset]} castShadow>
-                                    <boxGeometry args={[f.width, f.sillHeight, WALL_THICKNESS]} />
-                                    <meshStandardMaterial color="#cbd5e1" />
-                                </mesh>
-                            )
-                        }
-                        
-                        // The Feature itself (Window Glass / Door)
-                         if (f.type === 'window') {
-                            parts.push(
-                                <mesh key={`win-${i}`} position={[f.offset + f.width/2 - wallLength/2, (f.sillHeight||0) + f.height/2, zOffset]}>
-                                    <boxGeometry args={[f.width, f.height, 0.1]} />
-                                    <meshStandardMaterial color="#bae6fd" opacity={0.6} transparent />
-                                </mesh>
-                            )
-                             // Frame
-                             parts.push(
-                                <mesh key={`winframe-${i}`} position={[f.offset + f.width/2 - wallLength/2, (f.sillHeight||0) + f.height/2, zOffset]}>
-                                    <boxGeometry args={[f.width + 0.1, f.height + 0.1, WALL_THICKNESS * 0.6]} />
-                                    <meshStandardMaterial color="#1e293b" />
-                                </mesh>
-                             )
-                         } else {
-                             parts.push(
-                                <mesh key={`door-${i}`} position={[f.offset + f.width/2 - wallLength/2, f.height/2, zOffset]}>
-                                    <boxGeometry args={[f.width, f.height, 0.1]} />
-                                    <meshStandardMaterial color="#573e21" />
-                                </mesh>
-                            )
-                         }
+        // Feature area (Hole logic)
+        // Header
+        const headerH = height - (f.height + (f.sillHeight || 0));
+        if (headerH > 0) {
+             segments.push(
+                <mesh key={`head-${idx}`} position={[f.offset + f.width/2 - length/2, height - headerH/2, 0]} castShadow receiveShadow>
+                    <boxGeometry args={[f.width, headerH, WALL_THICKNESS]} />
+                    <meshStandardMaterial color="#e2e8f0" />
+                </mesh>
+            );
+        }
+        // Sill
+        const sillH = f.sillHeight || 0;
+        if (sillH > 0) {
+             segments.push(
+                <mesh key={`sill-${idx}`} position={[f.offset + f.width/2 - length/2, sillH/2, 0]} castShadow receiveShadow>
+                    <boxGeometry args={[f.width, sillH, WALL_THICKNESS]} />
+                    <meshStandardMaterial color="#e2e8f0" />
+                </mesh>
+            );
+        }
 
-                        c = f.offset + f.width;
-                    }
-                    // Final Right
-                    if (c < wallLength) {
-                        const w = Math.max(0, wallLength - c);
-                        if (w > 0) {
-                            parts.push(
-                                <mesh key={`last`} position={[c + w/2 - wallLength/2, WALL_HEIGHT/2, zOffset]} castShadow>
-                                    <boxGeometry args={[w, WALL_HEIGHT, WALL_THICKNESS]} />
-                                    <meshStandardMaterial color="#cbd5e1" />
-                                </mesh>
-                            )
-                        }
-                    }
-                    return parts;
-                })()}
-                </>
-            )}
+        // Window Glass / Door Frame
+        if (f.type === 'window') {
+             segments.push(
+                <mesh key={`glass-${idx}`} position={[f.offset + f.width/2 - length/2, sillH + f.height/2, 0]}>
+                    <boxGeometry args={[f.width, f.height, 0.1]} />
+                    <meshStandardMaterial color="#bae6fd" opacity={0.3} transparent metalness={0.8} roughness={0.1} />
+                </mesh>
+            );
+            // Simple Frame
+            segments.push(
+                 <mesh key={`frame-${idx}`} position={[f.offset + f.width/2 - length/2, sillH + f.height/2, 0]}>
+                    <boxGeometry args={[f.width + 0.2, f.height + 0.2, 0.2]} />
+                    <meshStandardMaterial color="#334155" />
+                </mesh>
+            )
+        } else {
+             // Door
+             segments.push(
+                <mesh key={`door-${idx}`} position={[f.offset + f.width/2 - length/2, f.height/2, 0]}>
+                    <boxGeometry args={[f.width, f.height, 0.1]} />
+                    <meshStandardMaterial color="#92400e" />
+                </mesh>
+             );
+        }
+
+        cursor = f.offset + f.width;
+    });
+
+    // Final segment after last feature
+    if (cursor < length) {
+        const width = length - cursor;
+        segments.push(
+             <mesh key={`seg-end`} position={[cursor + width/2 - length/2, height/2, 0]} castShadow receiveShadow>
+                <boxGeometry args={[width, height, WALL_THICKNESS]} />
+                <meshStandardMaterial color="#e2e8f0" />
+            </mesh>
+        );
+    }
+
+    return <group>{segments}</group>;
+}
+
+const RoomModel: React.FC<{ room: Room; x: number; y: number }> = ({ room, x, y }) => {
+    // Floor Material based on type
+    const floorColor = room.type === 'kitchen' || room.type === 'bathroom' ? '#94a3b8' : '#dcbfa3';
+    
+    return (
+        <group position={[x + room.width/2, 0, y + room.height/2]}>
+            {/* Floor */}
+            <mesh rotation={[-Math.PI/2, 0, 0]} position={[0, 0.02, 0]} receiveShadow>
+                <planeGeometry args={[room.width, room.height]} />
+                <meshStandardMaterial color={floorColor} roughness={0.6} />
+            </mesh>
+            
+            {/* Ceiling (Optional visualization) - usually hidden in top-down but good for shadow casting if closed */}
+            
+            {/* Walls */}
+            <group position={[0, 0, -room.height/2]}>
+                <SmartWall length={room.width} height={WALL_HEIGHT} features={room.features.filter(f => f.wall === 'top')} />
+            </group>
+            <group position={[0, 0, room.height/2]}>
+                <SmartWall length={room.width} height={WALL_HEIGHT} features={room.features.filter(f => f.wall === 'bottom')} />
+            </group>
+            <group position={[-room.width/2, 0, 0]} rotation={[0, Math.PI/2, 0]}>
+                <SmartWall length={room.height} height={WALL_HEIGHT} features={room.features.filter(f => f.wall === 'left')} />
+            </group>
+            <group position={[room.width/2, 0, 0]} rotation={[0, Math.PI/2, 0]}>
+                <SmartWall length={room.height} height={WALL_HEIGHT} features={room.features.filter(f => f.wall === 'right')} />
+            </group>
+
+            {/* Furniture */}
+            <group position={[-room.width/2, 0, -room.height/2]}>
+                 <ProceduralFurniture room={room} />
+            </group>
+            
+            {/* Label */}
+             <Text position={[0, 0.1, 0]} rotation={[-Math.PI/2, 0, 0]} fontSize={1} color="black" fillOpacity={0.4}>
+                {room.name}
+            </Text>
         </group>
-    );
-  };
-
-  return (
-    <group>
-       {renderWall('top')}
-       {renderWall('bottom')}
-       {renderWall('left')}
-       {renderWall('right')}
-       {/* Floor */}
-       <mesh rotation={[-Math.PI/2, 0, 0]} position={[x + room.width/2, 0.05, y + room.height/2]} receiveShadow>
-          <planeGeometry args={[Math.max(0.1, room.width - 0.1), Math.max(0.1, room.height - 0.1)]} />
-          <meshStandardMaterial color={room.type === 'bathroom' ? '#94a3b8' : '#dcbfa3'} />
-       </mesh>
-       {/* Room Label */}
-       <Text
-        position={[x + room.width/2, 0.1, y + room.height/2]}
-        rotation={[-Math.PI/2, 0, 0]}
-        fontSize={1}
-        color="#000000"
-        fillOpacity={0.5}
-       >
-        {room.name}
-       </Text>
-    </group>
-  );
-};
+    )
+}
 
 const Model3D: React.FC<Model3DProps> = ({ blueprint }) => {
   const [showRoof, setShowRoof] = useState(false);
-
-  // Center logic
+  
   const cx = blueprint.plotWidth / 2;
   const cy = blueprint.plotDepth / 2;
 
   return (
-    <div className="w-full h-full bg-slate-900 rounded-xl overflow-hidden relative shadow-inner border border-slate-700">
+    <div className="w-full h-full bg-slate-950 rounded-xl overflow-hidden relative shadow-2xl border border-slate-800">
        <div className="absolute top-4 left-4 z-10 pointer-events-none">
-         <h3 className="text-sm font-bold text-white flex items-center bg-slate-900/80 px-3 py-1 rounded backdrop-blur border border-slate-600">
-            <span className="w-2 h-2 rounded-full bg-purple-500 mr-2"></span>
-            PANEL B: High-Fidelity 3D
+         <h3 className="text-sm font-bold text-white flex items-center bg-slate-900/80 px-3 py-1 rounded backdrop-blur border border-slate-600 shadow-lg">
+            <span className="w-2 h-2 rounded-full bg-purple-500 mr-2 shadow-[0_0_10px_rgba(168,85,247,0.5)]"></span>
+            3D MODEL VIEWER
          </h3>
        </div>
        
-       <div className="absolute top-4 right-4 z-10 flex space-x-2">
+       <div className="absolute top-4 right-4 z-10">
             <button 
                 onClick={() => setShowRoof(!showRoof)}
-                className={`text-xs px-3 py-1 rounded border transition-colors ${showRoof ? 'bg-purple-600 text-white border-purple-500' : 'bg-slate-800 text-slate-300 border-slate-600'}`}
+                className={`text-xs px-3 py-1.5 rounded font-bold uppercase tracking-wider transition-all shadow-lg border ${showRoof ? 'bg-purple-600 border-purple-500 text-white' : 'bg-slate-800 border-slate-600 text-slate-300 hover:bg-slate-700'}`}
             >
                 {showRoof ? 'Hide Roof' : 'Show Roof'}
             </button>
        </div>
 
-       <div className="absolute bottom-4 right-4 z-10 text-xs text-slate-500 pointer-events-none">
-          Drag to Rotate • Scroll to Zoom
-       </div>
+      <Canvas shadows camera={{ position: [30, 45, 40], fov: 35 }} dpr={[1, 2]}>
+        <color attach="background" args={['#0f172a']} />
+        <fog attach="fog" args={['#0f172a', 30, 100]} />
 
-      <Canvas shadows camera={{ position: [30, 25, 30], fov: 35 }}>
-        <Sky sunPosition={[100, 20, 100]} />
-        <ambientLight intensity={0.4} />
+        <ambientLight intensity={0.4} color="#e2e8f0" />
         <directionalLight 
-            position={[50, 50, 25]} 
-            intensity={1.5} 
+            position={[50, 80, 30]} 
+            intensity={1.2} 
             castShadow 
-            shadow-mapSize={[1024, 1024]} 
-        />
-        
+            shadow-mapSize={[2048, 2048]} 
+        >
+             <orthographicCamera attach="shadow-camera" args={[-60, 60, 60, -60]} />
+        </directionalLight>
+
         <Suspense fallback={null}>
-          <Center top>
+          <Center>
             <group>
-                {/* Structure */}
                 {blueprint.rooms.map((room) => (
-                    <RoomStructure key={room.id} room={room} x={room.x - cx} y={room.y - cy} />
+                    <RoomModel key={room.id} room={room} x={room.x - cx} y={room.y - cy} />
                 ))}
 
-                {/* Roof (Simplified Pyramid for bounding box) */}
+                {/* Roof Visual (Toggle) */}
                 {showRoof && (
-                    <mesh position={[0, WALL_HEIGHT + 2, 0]} rotation={[0, Math.PI/4, 0]}>
-                        <coneGeometry args={[Math.max(blueprint.plotWidth, blueprint.plotDepth) * 0.8, 6, 4]} />
-                        <meshStandardMaterial color="#475569" roughness={0.9} />
-                    </mesh>
+                    <group position={[0, WALL_HEIGHT, 0]}>
+                         <mesh position={[0, 4, 0]} rotation={[0, Math.PI/4, 0]}>
+                            <coneGeometry args={[Math.max(blueprint.plotWidth, blueprint.plotDepth)*0.8, 8, 4]} />
+                            <meshStandardMaterial color="#334155" roughness={0.9} />
+                        </mesh>
+                    </group>
                 )}
 
-                {/* Plot Grass */}
+                {/* Property Line / Ground */}
+                <Grid position={[0, -0.05, 0]} args={[100, 100]} cellColor="#334155" sectionColor="#475569" fadeDistance={60} />
                 <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.1, 0]} receiveShadow>
-                    <planeGeometry args={[100, 100]} />
-                    <meshStandardMaterial color="#1e293b" />
+                    <planeGeometry args={[200, 200]} />
+                    <meshStandardMaterial color="#0f172a" />
                 </mesh>
-                
-                {/* Plot Boundary Line */}
-                <lineSegments position={[0, 0.05, 0]}>
-                     <edgesGeometry args={[new THREE.BoxGeometry(blueprint.plotWidth, 0.1, blueprint.plotDepth)]} />
-                     <lineBasicMaterial color="#ffffff" opacity={0.2} transparent dashSize={1} gapSize={1} />
-                </lineSegments>
-
             </group>
           </Center>
-          <ContactShadows position={[0, -0.1, 0]} opacity={0.4} scale={50} blur={2} far={10} resolution={256} color="#000000" />
+          <ContactShadows resolution={1024} scale={100} blur={2} opacity={0.5} far={10} color="#000000" />
         </Suspense>
 
-        <OrbitControls makeDefault minPolarAngle={0} maxPolarAngle={Math.PI / 2.1} />
+        <OrbitControls makeDefault maxPolarAngle={Math.PI / 2.2} minDistance={10} maxDistance={150} />
       </Canvas>
     </div>
   );

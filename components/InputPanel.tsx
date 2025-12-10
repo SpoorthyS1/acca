@@ -1,3 +1,4 @@
+
 import React, { useState, useRef } from 'react';
 import { Upload, FileText, Loader2, ArrowRight, MapPin } from 'lucide-react';
 import { AnalysisRequest } from '../types';
@@ -71,7 +72,7 @@ const InputPanel: React.FC<InputPanelProps> = ({ onAnalyze, isAnalyzing }) => {
                     type="text"
                     value={location}
                     onChange={(e) => setLocation(e.target.value)}
-                    placeholder="City, State, Country"
+                    placeholder="e.g. Austin, TX, USA"
                     className="w-full bg-slate-800 border border-slate-700 rounded-lg py-2 pl-9 pr-3 text-slate-200 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none"
                 />
             </div>
