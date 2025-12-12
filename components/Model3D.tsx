@@ -5,51 +5,21 @@ import { OrbitControls, Center, Text, Environment, ContactShadows, Grid } from '
 import { Blueprint, Room, Feature } from '../types';
 import * as THREE from 'three';
 
-// Resolve TypeScript errors for React Three Fiber elements
-// Augment 'react' module for React 18+ style JSX
-declare module 'react' {
-  namespace JSX {
-    interface IntrinsicElements {
-      ambientLight: any;
-      boxGeometry: any;
-      color: any;
-      directionalLight: any;
-      extrudeGeometry: any;
-      fog: any;
-      group: any;
-      mesh: any;
-      meshStandardMaterial: any;
-      orthographicCamera: any;
-      planeGeometry: any;
-    }
-  }
-}
-
-// Augment global JSX namespace for older React / different setups
-declare global {
-  namespace JSX {
-    interface IntrinsicElements {
-      ambientLight: any;
-      boxGeometry: any;
-      color: any;
-      directionalLight: any;
-      extrudeGeometry: any;
-      fog: any;
-      group: any;
-      mesh: any;
-      meshStandardMaterial: any;
-      orthographicCamera: any;
-      planeGeometry: any;
-    }
-  }
-}
-
 interface Model3DProps {
   blueprint: Blueprint;
 }
 
 const WALL_THICKNESS = 0.5;
 const WALL_HEIGHT = 9;
+
+// --- ARCHITECTURAL MATERIALS PALETTE ---
+const MAT_WALL = "#F5F5DC";        // Off-white drywall / Beige
+const MAT_FLOOR = "#DEB887";       // Wood floor
+const MAT_FLOOR_TILE = "#cbd5e1";  // Slate tile (Bath/Kitchen)
+const MAT_DOOR_PANEL = "#8B4513";  // Wood brown
+const MAT_DOOR_FRAME = "#FFFFFF";  // White trim
+const MAT_WINDOW_FRAME = "#FFFFFF";// White frame
+const MAT_GLASS = "#87CEEB";       // Sky blue glass
 
 // --- Furniture Assets ---
 const Bed = () => (
@@ -94,7 +64,7 @@ const SmartWallSegment: React.FC<{ length: number, height: number, features: Fea
             segments.push(
                 <mesh key={`seg-${idx}`} position={[cursor + width/2 - length/2, height/2, 0]} castShadow receiveShadow>
                     <boxGeometry args={[width, height, WALL_THICKNESS]} />
-                    <meshStandardMaterial color="#e2e8f0" />
+                    <meshLambertMaterial color={MAT_WALL} />
                 </mesh>
             );
         }
@@ -105,7 +75,7 @@ const SmartWallSegment: React.FC<{ length: number, height: number, features: Fea
              segments.push(
                 <mesh key={`head-${idx}`} position={[f.offset + f.width/2 - length/2, height - headerH/2, 0]} castShadow receiveShadow>
                     <boxGeometry args={[f.width, headerH, WALL_THICKNESS]} />
-                    <meshStandardMaterial color="#e2e8f0" />
+                    <meshLambertMaterial color={MAT_WALL} />
                 </mesh>
             );
         }
@@ -115,7 +85,7 @@ const SmartWallSegment: React.FC<{ length: number, height: number, features: Fea
              segments.push(
                 <mesh key={`sill-${idx}`} position={[f.offset + f.width/2 - length/2, sillH/2, 0]} castShadow receiveShadow>
                     <boxGeometry args={[f.width, sillH, WALL_THICKNESS]} />
-                    <meshStandardMaterial color="#e2e8f0" />
+                    <meshLambertMaterial color={MAT_WALL} />
                 </mesh>
             );
         }
@@ -125,19 +95,17 @@ const SmartWallSegment: React.FC<{ length: number, height: number, features: Fea
              segments.push(
                 <mesh key={`glass-${idx}`} position={[f.offset + f.width/2 - length/2, sillH + f.height/2, 0]}>
                     <boxGeometry args={[f.width, f.height, 0.1]} />
-                    <meshStandardMaterial color="#bae6fd" opacity={0.3} transparent metalness={0.8} roughness={0.1} />
+                    <meshPhongMaterial color={MAT_GLASS} opacity={0.3} transparent shininess={100} />
                 </mesh>
             );
             segments.push(
                  <mesh key={`frame-${idx}`} position={[f.offset + f.width/2 - length/2, sillH + f.height/2, 0]}>
                     <boxGeometry args={[f.width + 0.2, f.height + 0.2, 0.2]} />
-                    <meshStandardMaterial color="#334155" />
+                    <meshLambertMaterial color={MAT_WINDOW_FRAME} />
                 </mesh>
             )
         } else {
              // DOOR / OPENING
-             // If subtype is explicitly 'opening', we don't render a door leaf or heavy frame, just the gap.
-             // If undefined, default to hinged for backward compatibility.
              const isOpening = f.subtype === 'opening';
              
              if (!isOpening) {
@@ -145,25 +113,29 @@ const SmartWallSegment: React.FC<{ length: number, height: number, features: Fea
                  segments.push(
                     <mesh key={`door-frame-${idx}`} position={[f.offset + f.width/2 - length/2, f.height/2, 0]}>
                          <boxGeometry args={[f.width + 0.2, f.height + 0.1, 0.25]} />
-                         <meshStandardMaterial color="#7c2d12" />
+                         <meshLambertMaterial color={MAT_DOOR_FRAME} />
                     </mesh>
                  );
-                 // Door Leaf
+                 // Door Panel
                  segments.push(
                     <group key={`door-leaf-${idx}`} position={[f.offset - length/2, 0, 0]}>
                         <mesh position={[f.width/2, f.height/2, 0]} rotation={[0, Math.PI/4, 0]} position-x={f.width/2}> 
-                            <boxGeometry args={[f.width, f.height, 0.1]} />
-                            <meshStandardMaterial color="#9a3412" />
+                            <boxGeometry args={[f.width, f.height, 0.15]} />
+                            <meshLambertMaterial color={MAT_DOOR_PANEL} />
+                        </mesh>
+                        {/* Handle */}
+                        <mesh position={[f.width * 0.85, f.height * 0.45, 0.1]} rotation={[0, Math.PI/4, 0]} position-x={f.width * 0.85}>
+                             <boxGeometry args={[0.1, 0.4, 0.1]} />
+                             <meshStandardMaterial color="#FFD700" metalness={0.8} roughness={0.2} />
                         </mesh>
                     </group>
                  );
              } else {
-                 // Just a simple thin lintel/jamb to show it's finished? 
-                 // Or nothing (pure gap). Let's add a very thin casing for visual polish.
+                 // Cased Opening
                  segments.push(
                     <mesh key={`opening-jamb-${idx}`} position={[f.offset + f.width/2 - length/2, f.height/2, 0]}>
                          <boxGeometry args={[f.width + 0.1, f.height + 0.1, WALL_THICKNESS + 0.1]} />
-                         <meshStandardMaterial color="#e2e8f0" />
+                         <meshLambertMaterial color={MAT_DOOR_FRAME} />
                     </mesh>
                  );
              }
@@ -176,7 +148,7 @@ const SmartWallSegment: React.FC<{ length: number, height: number, features: Fea
         segments.push(
              <mesh key={`seg-end`} position={[cursor + width/2 - length/2, height/2, 0]} castShadow receiveShadow>
                 <boxGeometry args={[width, height, WALL_THICKNESS]} />
-                <meshStandardMaterial color="#e2e8f0" />
+                <meshLambertMaterial color={MAT_WALL} />
             </mesh>
         );
     }
@@ -187,21 +159,18 @@ const RoomModel: React.FC<{ room: Room; x: number; y: number }> = ({ room, x, y 
     // Determine Geometry Strategy
     const isPolygon = room.shape === 'polygon' && room.vertices && room.vertices.length > 2;
 
-    // Floor Color
-    let floorColor = '#dcbfa3';
-    if (room.type === 'kitchen' || room.type === 'bathroom') floorColor = '#94a3b8';
-    if (room.type === 'hallway') floorColor = '#e2e8f0';
+    // Floor Color Logic
+    let floorColor = MAT_FLOOR;
+    if (room.type === 'kitchen' || room.type === 'bathroom' || room.type === 'garage') floorColor = MAT_FLOOR_TILE;
 
     // Geometry Generation
     const shape = useMemo(() => {
         const s = new THREE.Shape();
         if (isPolygon && room.vertices && room.vertices.length > 0) {
-            // FIX: Check if first vertex exists
             const start = room.vertices[0];
             if (start) {
                 s.moveTo(start.x, start.y);
                 for (let i = 1; i < room.vertices.length; i++) {
-                    // FIX: Check if subsequent vertices exist
                     const v = room.vertices[i];
                     if (v) s.lineTo(v.x, v.y);
                 }
@@ -224,21 +193,17 @@ const RoomModel: React.FC<{ room: Room; x: number; y: number }> = ({ room, x, y 
             const v1 = room.vertices[i];
             const v2 = room.vertices[(i + 1) % room.vertices.length];
             
-            // FIX: Safety Check
             if (!v1 || !v2) continue;
             
-            // Calculate Wall Stats
             const dx = v2.x - v1.x;
             const dy = v2.y - v1.y;
             const len = Math.sqrt(dx * dx + dy * dy);
-            const angle = Math.atan2(dy, dx); // Angle in radians
+            const angle = Math.atan2(dy, dx); 
             
-            // Find Features for this wall index (number)
             const wallFeatures = room.features.filter(f => f.wall === i);
 
             walls.push(
                 <group key={`wall-${i}`} position={[v1.x, 0, v1.y]} rotation={[0, -angle, 0]}>
-                    {/* Translate to center of wall segment length for standard scaling logic */}
                     <group position={[len/2, 0, 0]}>
                          <SmartWallSegment length={len} height={WALL_HEIGHT} features={wallFeatures} />
                     </group>
@@ -246,7 +211,7 @@ const RoomModel: React.FC<{ room: Room; x: number; y: number }> = ({ room, x, y 
             );
         }
     } else {
-        // Fallback for Standard Rectangles (legacy support)
+        // Fallback for Rectangles
         walls.push(
              <group position={[room.width/2, 0, 0]}>
                  <SmartWallSegment length={room.width} height={WALL_HEIGHT} features={room.features.filter(f => f.wall === 'top')} />
@@ -271,16 +236,16 @@ const RoomModel: React.FC<{ room: Room; x: number; y: number }> = ({ room, x, y 
 
     return (
         <group position={[x, 0, y]}>
-            {/* Floor Shape (Extruded) */}
+            {/* Floor Shape */}
             <mesh rotation={[Math.PI/2, 0, 0]} position={[0, 0.1, 0]} castShadow receiveShadow>
                 <extrudeGeometry args={[shape, { depth: 0.2, bevelEnabled: false }]} />
-                <meshStandardMaterial color={floorColor} roughness={0.6} />
+                <meshLambertMaterial color={floorColor} />
             </mesh>
             
             {/* Plinth */}
             <mesh rotation={[Math.PI/2, 0, 0]} position={[0, 0, 0]}>
                 <extrudeGeometry args={[shape, { depth: 0.1, bevelEnabled: false }]} />
-                <meshStandardMaterial color="#1e293b" />
+                <meshLambertMaterial color="#334155" />
             </mesh>
 
             {/* Walls */}
@@ -335,7 +300,7 @@ const Model3D: React.FC<Model3DProps> = ({ blueprint }) => {
         <color attach="background" args={['#0f172a']} />
         <fog attach="fog" args={['#0f172a', 30, 100]} />
 
-        <ambientLight intensity={0.4} color="#e2e8f0" />
+        <ambientLight intensity={0.5} color="#ffffff" />
         <directionalLight 
             position={[50, 80, 30]} 
             intensity={1.2} 

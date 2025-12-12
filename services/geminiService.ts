@@ -63,12 +63,34 @@ export const analyzeDesign = async (request: AnalysisRequest): Promise<Complianc
       }
     });
     parts.push({
-      text: `PHASE 2: STRICT FIDELITY EXTRACTION
-      ACTION: Analyze the image.
-      - Trace the "originalBlueprint" EXACTLY as drawn.
-      - If a door is missing in the image, the "originalBlueprint" MUST NOT have that door.
-      - If a room is too small, draw it too small.
-      - Do not apply fixes yet.`
+      text: `PHASE 2: FORENSIC BLUEPRINT EXTRACTION (THINKING MODE)
+      
+      **TASK:** You are digitizing a floor plan. Every line, every pixel matters.
+      
+      **THINKING PROCESS (Must be reflected in output accuracy):**
+      
+      1.  **GRID SCAN:** Mentally divide the image into a 10x10 grid. Scan each cell.
+      2.  **ROOM IDENTIFICATION:** 
+          -   Find every label. 
+          -   Find every small enclosed space (closets, toilets).
+          -   **DO NOT MISS ANY ROOM.**
+      3.  **WALL TRACING (NEIGHBOR CHECK):**
+          -   Start with the largest room.
+          -   Identify what is next to it.
+          -   **LOCK COORDINATES:** If the Kitchen shares a wall with the Garage, they must share the EXACT SAME coordinate line.
+      4.  **DETAIL VALIDATION (ZOOM IN):**
+          -   **Windows:** Is that a window or just a dimension line? (Windows are gaps in walls with inner lines). Measure relative to doors.
+          -   **Doors:** Look for the **ARC**. No arc = sliding or cased opening.
+          -   **Stairs:** Identify the block of parallel lines. Do not put walls between stair treads.
+      
+      **SCALE REFERENCE:**
+      -   Find a standard doorway (usually 30-36 inches). Use this to calculate the feet/inches of everything else.
+      
+      **OUTPUT:**
+      -   'originalBlueprint': The EXACT state of the image. (If it has code violations, KEEP THEM).
+      -   'correctedBlueprint': The fixed version.
+      
+      Output ONLY the JSON.`
     });
   } else if (request.textPrompt) {
     parts.push({
@@ -83,7 +105,7 @@ export const analyzeDesign = async (request: AnalysisRequest): Promise<Complianc
       text: `PHASE 3: AUDIT & CORRECTION
       ACTION:
       1. Audit "originalBlueprint" against the codes found in Phase 1.
-      2. Generate "correctedBlueprint" where ALL violations are resolved (e.g., widen doors, add windows, expand rooms).
+      2. Generate "correctedBlueprint" where ALL violations are resolved.
       3. Return the JSON.`
   });
 
@@ -92,9 +114,11 @@ export const analyzeDesign = async (request: AnalysisRequest): Promise<Complianc
       model: MODEL_NAME,
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
-        // Removed googleSearch tool to allow use of responseMimeType: 'application/json'
-        // This forces the model to output valid JSON only, preventing parsing errors.
         responseMimeType: 'application/json',
+        // Maximize thinking budget for deep visual analysis
+        thinkingConfig: {
+            thinkingBudget: 16000
+        }
       },
       contents: {
         parts: parts
@@ -104,7 +128,7 @@ export const analyzeDesign = async (request: AnalysisRequest): Promise<Complianc
     const text = response.text;
     if (!text) throw new Error("No response from AI");
 
-    // Clean up potential markdown formatting if the model slips up (though MIME type usually fixes this)
+    // Clean up potential markdown formatting if the model slips up
     let jsonStr = text.trim();
     if (jsonStr.startsWith('```json')) {
         jsonStr = jsonStr.replace(/^```json/, '').replace(/```$/, '');
@@ -113,14 +137,20 @@ export const analyzeDesign = async (request: AnalysisRequest): Promise<Complianc
     }
 
     try {
-        const result = JSON.parse(jsonStr) as ComplianceResult;
+        let result = JSON.parse(jsonStr);
         
+        // FIX: Handle potential root wrapper (e.g., { complianceResult: { ... } })
+        if (result.complianceResult) {
+            result = result.complianceResult;
+        }
+
         // Data Integrity Check
         if (!result.originalBlueprint || !result.correctedBlueprint) {
-            throw new Error("Incomplete blueprint data received");
+            console.error("Invalid Structure - Keys found:", Object.keys(result));
+            throw new Error("Incomplete blueprint data received. Missing 'originalBlueprint' or 'correctedBlueprint'.");
         }
         
-        return result;
+        return result as ComplianceResult;
     } catch (parseError) {
         console.error("Failed to parse JSON:", jsonStr);
         throw new Error("AI response was not valid JSON. Please try again.");
