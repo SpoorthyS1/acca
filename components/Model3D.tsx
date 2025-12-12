@@ -5,6 +5,45 @@ import { OrbitControls, Center, Text, Environment, ContactShadows, Grid } from '
 import { Blueprint, Room, Feature } from '../types';
 import * as THREE from 'three';
 
+// Resolve TypeScript errors for React Three Fiber elements
+// Augment 'react' module for React 18+ style JSX
+declare module 'react' {
+  namespace JSX {
+    interface IntrinsicElements {
+      ambientLight: any;
+      boxGeometry: any;
+      color: any;
+      directionalLight: any;
+      extrudeGeometry: any;
+      fog: any;
+      group: any;
+      mesh: any;
+      meshStandardMaterial: any;
+      orthographicCamera: any;
+      planeGeometry: any;
+    }
+  }
+}
+
+// Augment global JSX namespace for older React / different setups
+declare global {
+  namespace JSX {
+    interface IntrinsicElements {
+      ambientLight: any;
+      boxGeometry: any;
+      color: any;
+      directionalLight: any;
+      extrudeGeometry: any;
+      fog: any;
+      group: any;
+      mesh: any;
+      meshStandardMaterial: any;
+      orthographicCamera: any;
+      planeGeometry: any;
+    }
+  }
+}
+
 interface Model3DProps {
   blueprint: Blueprint;
 }
@@ -12,75 +51,39 @@ interface Model3DProps {
 const WALL_THICKNESS = 0.5;
 const WALL_HEIGHT = 9;
 
-// --- Furniture Assets (Procedural Geometries) ---
+// --- Furniture Assets ---
 const Bed = () => (
     <group position={[2, 0, 3]}>
-        <mesh position={[0, 1, 0]} castShadow>
-            <boxGeometry args={[4, 2, 6]} />
-            <meshStandardMaterial color="#e2e8f0" />
-        </mesh>
-        <mesh position={[0, 2.1, -2]} castShadow>
-            <boxGeometry args={[4, 0.5, 1.5]} />
-            <meshStandardMaterial color="#94a3b8" />
-        </mesh>
-        <mesh position={[0, 2.05, 1]} castShadow>
-            <boxGeometry args={[3.8, 0.1, 5]} />
-            <meshStandardMaterial color="#f8fafc" />
-        </mesh>
+        <mesh position={[0, 1, 0]} castShadow><boxGeometry args={[4, 2, 6]} /><meshStandardMaterial color="#e2e8f0" /></mesh>
+        <mesh position={[0, 2.1, -2]} castShadow><boxGeometry args={[4, 0.5, 1.5]} /><meshStandardMaterial color="#94a3b8" /></mesh>
+        <mesh position={[0, 2.05, 1]} castShadow><boxGeometry args={[3.8, 0.1, 5]} /><meshStandardMaterial color="#f8fafc" /></mesh>
     </group>
 );
 
 const Sofa = () => (
     <group position={[2, 0, 2]}>
-        <mesh position={[0, 1, 0]} castShadow>
-            <boxGeometry args={[6, 1.2, 2.5]} />
-            <meshStandardMaterial color="#475569" />
-        </mesh>
-        <mesh position={[0, 2, -1]} castShadow>
-             <boxGeometry args={[6, 1.5, 0.5]} />
-             <meshStandardMaterial color="#334155" />
-        </mesh>
-         <mesh position={[-2.75, 1.6, 0]} castShadow>
-             <boxGeometry args={[0.5, 1, 2.5]} />
-             <meshStandardMaterial color="#334155" />
-        </mesh>
-         <mesh position={[2.75, 1.6, 0]} castShadow>
-             <boxGeometry args={[0.5, 1, 2.5]} />
-             <meshStandardMaterial color="#334155" />
-        </mesh>
+        <mesh position={[0, 1, 0]} castShadow><boxGeometry args={[6, 1.2, 2.5]} /><meshStandardMaterial color="#475569" /></mesh>
+        <mesh position={[0, 2, -1]} castShadow><boxGeometry args={[6, 1.5, 0.5]} /><meshStandardMaterial color="#334155" /></mesh>
     </group>
 );
 
 const KitchenUnit = ({ width }: { width: number }) => (
     <group position={[width/2, 0, 1]}>
-         <mesh position={[0, 1.5, 0]} castShadow>
-             <boxGeometry args={[width, 3, 2]} />
-             <meshStandardMaterial color="#cbd5e1" roughness={0.2} />
-         </mesh>
-         <mesh position={[0, 3.01, 0]}>
-             <planeGeometry args={[width, 2]} rotation={[-Math.PI/2, 0, 0]} />
-             <meshStandardMaterial color="#1e293b" roughness={0.1} metalness={0.5} />
-         </mesh>
+         <mesh position={[0, 1.5, 0]} castShadow><boxGeometry args={[width, 3, 2]} /><meshStandardMaterial color="#cbd5e1" roughness={0.2} /></mesh>
+         <mesh position={[0, 3.01, 0]}><planeGeometry args={[width, 2]} rotation={[-Math.PI/2, 0, 0]} /><meshStandardMaterial color="#1e293b" roughness={0.1} metalness={0.5} /></mesh>
     </group>
 )
 
 const ProceduralFurniture: React.FC<{ room: Room }> = ({ room }) => {
-    // Simple logic to place furniture based on room type
     if (room.type === 'bedroom') return <group position={[room.width/2 - 2, 0, room.height/2 - 3]}><Bed /></group>;
     if (room.type === 'living') return <group position={[room.width/2 - 3, 0, room.height/2]} rotation={[0, Math.PI/4, 0]}><Sofa /></group>;
     if (room.type === 'kitchen') return <group position={[0, 0, 0]}><KitchenUnit width={room.width} /></group>;
     return null;
 };
 
-// --- Wall Generation Logic ---
-// Instead of CSG (which is heavy), we build walls from segments:
-// Left of window, Right of window, Header (above), Sill (below).
-const SmartWall: React.FC<{ length: number, height: number, features: Feature[] }> = ({ length, height, features }) => {
-    
-    // 1. Sort features by position
+// --- Smart Wall Segment Generator ---
+const SmartWallSegment: React.FC<{ length: number, height: number, features: Feature[] }> = ({ length, height, features }) => {
     const sortedFeatures = [...features].sort((a, b) => a.offset - b.offset);
-    
-    // 2. Create segments
     const segments = [];
     let cursor = 0;
 
@@ -96,8 +99,7 @@ const SmartWall: React.FC<{ length: number, height: number, features: Feature[] 
             );
         }
 
-        // Feature area (Hole logic)
-        // Header
+        // Header above feature
         const headerH = height - (f.height + (f.sillHeight || 0));
         if (headerH > 0) {
              segments.push(
@@ -107,7 +109,7 @@ const SmartWall: React.FC<{ length: number, height: number, features: Feature[] 
                 </mesh>
             );
         }
-        // Sill
+        // Sill below feature
         const sillH = f.sillHeight || 0;
         if (sillH > 0) {
              segments.push(
@@ -118,7 +120,7 @@ const SmartWall: React.FC<{ length: number, height: number, features: Feature[] 
             );
         }
 
-        // Window Glass / Door Frame
+        // Window Glass
         if (f.type === 'window') {
              segments.push(
                 <mesh key={`glass-${idx}`} position={[f.offset + f.width/2 - length/2, sillH + f.height/2, 0]}>
@@ -126,7 +128,6 @@ const SmartWall: React.FC<{ length: number, height: number, features: Feature[] 
                     <meshStandardMaterial color="#bae6fd" opacity={0.3} transparent metalness={0.8} roughness={0.1} />
                 </mesh>
             );
-            // Simple Frame
             segments.push(
                  <mesh key={`frame-${idx}`} position={[f.offset + f.width/2 - length/2, sillH + f.height/2, 0]}>
                     <boxGeometry args={[f.width + 0.2, f.height + 0.2, 0.2]} />
@@ -134,19 +135,42 @@ const SmartWall: React.FC<{ length: number, height: number, features: Feature[] 
                 </mesh>
             )
         } else {
-             // Door
-             segments.push(
-                <mesh key={`door-${idx}`} position={[f.offset + f.width/2 - length/2, f.height/2, 0]}>
-                    <boxGeometry args={[f.width, f.height, 0.1]} />
-                    <meshStandardMaterial color="#92400e" />
-                </mesh>
-             );
+             // DOOR / OPENING
+             // If subtype is explicitly 'opening', we don't render a door leaf or heavy frame, just the gap.
+             // If undefined, default to hinged for backward compatibility.
+             const isOpening = f.subtype === 'opening';
+             
+             if (!isOpening) {
+                 // Door Frame
+                 segments.push(
+                    <mesh key={`door-frame-${idx}`} position={[f.offset + f.width/2 - length/2, f.height/2, 0]}>
+                         <boxGeometry args={[f.width + 0.2, f.height + 0.1, 0.25]} />
+                         <meshStandardMaterial color="#7c2d12" />
+                    </mesh>
+                 );
+                 // Door Leaf
+                 segments.push(
+                    <group key={`door-leaf-${idx}`} position={[f.offset - length/2, 0, 0]}>
+                        <mesh position={[f.width/2, f.height/2, 0]} rotation={[0, Math.PI/4, 0]} position-x={f.width/2}> 
+                            <boxGeometry args={[f.width, f.height, 0.1]} />
+                            <meshStandardMaterial color="#9a3412" />
+                        </mesh>
+                    </group>
+                 );
+             } else {
+                 // Just a simple thin lintel/jamb to show it's finished? 
+                 // Or nothing (pure gap). Let's add a very thin casing for visual polish.
+                 segments.push(
+                    <mesh key={`opening-jamb-${idx}`} position={[f.offset + f.width/2 - length/2, f.height/2, 0]}>
+                         <boxGeometry args={[f.width + 0.1, f.height + 0.1, WALL_THICKNESS + 0.1]} />
+                         <meshStandardMaterial color="#e2e8f0" />
+                    </mesh>
+                 );
+             }
         }
-
         cursor = f.offset + f.width;
     });
 
-    // Final segment after last feature
     if (cursor < length) {
         const width = length - cursor;
         segments.push(
@@ -156,45 +180,119 @@ const SmartWall: React.FC<{ length: number, height: number, features: Feature[] 
             </mesh>
         );
     }
-
     return <group>{segments}</group>;
 }
 
 const RoomModel: React.FC<{ room: Room; x: number; y: number }> = ({ room, x, y }) => {
-    // Floor Material based on type
-    const floorColor = room.type === 'kitchen' || room.type === 'bathroom' ? '#94a3b8' : '#dcbfa3';
-    
+    // Determine Geometry Strategy
+    const isPolygon = room.shape === 'polygon' && room.vertices && room.vertices.length > 2;
+
+    // Floor Color
+    let floorColor = '#dcbfa3';
+    if (room.type === 'kitchen' || room.type === 'bathroom') floorColor = '#94a3b8';
+    if (room.type === 'hallway') floorColor = '#e2e8f0';
+
+    // Geometry Generation
+    const shape = useMemo(() => {
+        const s = new THREE.Shape();
+        if (isPolygon && room.vertices && room.vertices.length > 0) {
+            // FIX: Check if first vertex exists
+            const start = room.vertices[0];
+            if (start) {
+                s.moveTo(start.x, start.y);
+                for (let i = 1; i < room.vertices.length; i++) {
+                    // FIX: Check if subsequent vertices exist
+                    const v = room.vertices[i];
+                    if (v) s.lineTo(v.x, v.y);
+                }
+                s.closePath();
+            }
+        } else {
+            s.moveTo(0, 0);
+            s.lineTo(room.width, 0);
+            s.lineTo(room.width, room.height);
+            s.lineTo(0, room.height);
+            s.closePath();
+        }
+        return s;
+    }, [room, isPolygon]);
+
+    // Wall Loop
+    const walls = [];
+    if (isPolygon && room.vertices) {
+        for (let i = 0; i < room.vertices.length; i++) {
+            const v1 = room.vertices[i];
+            const v2 = room.vertices[(i + 1) % room.vertices.length];
+            
+            // FIX: Safety Check
+            if (!v1 || !v2) continue;
+            
+            // Calculate Wall Stats
+            const dx = v2.x - v1.x;
+            const dy = v2.y - v1.y;
+            const len = Math.sqrt(dx * dx + dy * dy);
+            const angle = Math.atan2(dy, dx); // Angle in radians
+            
+            // Find Features for this wall index (number)
+            const wallFeatures = room.features.filter(f => f.wall === i);
+
+            walls.push(
+                <group key={`wall-${i}`} position={[v1.x, 0, v1.y]} rotation={[0, -angle, 0]}>
+                    {/* Translate to center of wall segment length for standard scaling logic */}
+                    <group position={[len/2, 0, 0]}>
+                         <SmartWallSegment length={len} height={WALL_HEIGHT} features={wallFeatures} />
+                    </group>
+                </group>
+            );
+        }
+    } else {
+        // Fallback for Standard Rectangles (legacy support)
+        walls.push(
+             <group position={[room.width/2, 0, 0]}>
+                 <SmartWallSegment length={room.width} height={WALL_HEIGHT} features={room.features.filter(f => f.wall === 'top')} />
+             </group>
+        );
+        walls.push(
+             <group position={[room.width/2, 0, room.height]}>
+                 <SmartWallSegment length={room.width} height={WALL_HEIGHT} features={room.features.filter(f => f.wall === 'bottom')} />
+             </group>
+        );
+        walls.push(
+             <group position={[0, 0, room.height/2]} rotation={[0, Math.PI/2, 0]}>
+                 <SmartWallSegment length={room.height} height={WALL_HEIGHT} features={room.features.filter(f => f.wall === 'left')} />
+             </group>
+        );
+        walls.push(
+             <group position={[room.width, 0, room.height/2]} rotation={[0, Math.PI/2, 0]}>
+                 <SmartWallSegment length={room.height} height={WALL_HEIGHT} features={room.features.filter(f => f.wall === 'right')} />
+             </group>
+        );
+    }
+
     return (
-        <group position={[x + room.width/2, 0, y + room.height/2]}>
-            {/* Floor */}
-            <mesh rotation={[-Math.PI/2, 0, 0]} position={[0, 0.02, 0]} receiveShadow>
-                <planeGeometry args={[room.width, room.height]} />
+        <group position={[x, 0, y]}>
+            {/* Floor Shape (Extruded) */}
+            <mesh rotation={[Math.PI/2, 0, 0]} position={[0, 0.1, 0]} castShadow receiveShadow>
+                <extrudeGeometry args={[shape, { depth: 0.2, bevelEnabled: false }]} />
                 <meshStandardMaterial color={floorColor} roughness={0.6} />
             </mesh>
             
-            {/* Ceiling (Optional visualization) - usually hidden in top-down but good for shadow casting if closed */}
-            
+            {/* Plinth */}
+            <mesh rotation={[Math.PI/2, 0, 0]} position={[0, 0, 0]}>
+                <extrudeGeometry args={[shape, { depth: 0.1, bevelEnabled: false }]} />
+                <meshStandardMaterial color="#1e293b" />
+            </mesh>
+
             {/* Walls */}
-            <group position={[0, 0, -room.height/2]}>
-                <SmartWall length={room.width} height={WALL_HEIGHT} features={room.features.filter(f => f.wall === 'top')} />
-            </group>
-            <group position={[0, 0, room.height/2]}>
-                <SmartWall length={room.width} height={WALL_HEIGHT} features={room.features.filter(f => f.wall === 'bottom')} />
-            </group>
-            <group position={[-room.width/2, 0, 0]} rotation={[0, Math.PI/2, 0]}>
-                <SmartWall length={room.height} height={WALL_HEIGHT} features={room.features.filter(f => f.wall === 'left')} />
-            </group>
-            <group position={[room.width/2, 0, 0]} rotation={[0, Math.PI/2, 0]}>
-                <SmartWall length={room.height} height={WALL_HEIGHT} features={room.features.filter(f => f.wall === 'right')} />
-            </group>
+            {walls}
 
             {/* Furniture */}
-            <group position={[-room.width/2, 0, -room.height/2]}>
+            <group position={[room.width/2, 0, room.height/2]}> 
                  <ProceduralFurniture room={room} />
             </group>
             
             {/* Label */}
-             <Text position={[0, 0.1, 0]} rotation={[-Math.PI/2, 0, 0]} fontSize={1} color="black" fillOpacity={0.4}>
+            <Text position={[room.width/2, 0.1, room.height/2]} rotation={[-Math.PI/2, 0, 0]} fontSize={0.8} color="black" fillOpacity={0.4}>
                 {room.name}
             </Text>
         </group>
@@ -204,6 +302,14 @@ const RoomModel: React.FC<{ room: Room; x: number; y: number }> = ({ room, x, y 
 const Model3D: React.FC<Model3DProps> = ({ blueprint }) => {
   const [showRoof, setShowRoof] = useState(false);
   
+  if (!blueprint) {
+    return (
+        <div className="w-full h-full bg-slate-950 rounded-xl overflow-hidden relative shadow-2xl border border-slate-800 flex items-center justify-center text-slate-500">
+            <span className="text-sm font-mono">No 3D Geometry Available</span>
+        </div>
+    );
+  }
+
   const cx = blueprint.plotWidth / 2;
   const cy = blueprint.plotDepth / 2;
 
@@ -246,19 +352,9 @@ const Model3D: React.FC<Model3DProps> = ({ blueprint }) => {
                     <RoomModel key={room.id} room={room} x={room.x - cx} y={room.y - cy} />
                 ))}
 
-                {/* Roof Visual (Toggle) */}
-                {showRoof && (
-                    <group position={[0, WALL_HEIGHT, 0]}>
-                         <mesh position={[0, 4, 0]} rotation={[0, Math.PI/4, 0]}>
-                            <coneGeometry args={[Math.max(blueprint.plotWidth, blueprint.plotDepth)*0.8, 8, 4]} />
-                            <meshStandardMaterial color="#334155" roughness={0.9} />
-                        </mesh>
-                    </group>
-                )}
-
-                {/* Property Line / Ground */}
+                {/* Ground */}
                 <Grid position={[0, -0.05, 0]} args={[100, 100]} cellColor="#334155" sectionColor="#475569" fadeDistance={60} />
-                <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.1, 0]} receiveShadow>
+                <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.2, 0]} receiveShadow>
                     <planeGeometry args={[200, 200]} />
                     <meshStandardMaterial color="#0f172a" />
                 </mesh>

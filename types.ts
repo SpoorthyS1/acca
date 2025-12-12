@@ -1,9 +1,12 @@
 
+
 export interface Feature {
   id: string;
   type: 'window' | 'door';
-  wall: 'top' | 'bottom' | 'left' | 'right';
-  offset: number; // distance from top-left corner of the wall
+  subtype?: 'hinged' | 'sliding' | 'opening'; // 'hinged' is default for doors, 'opening' for gaps
+  // 'top' etc for rectangles, number (index of vertex pair) for polygons
+  wall: 'top' | 'bottom' | 'left' | 'right' | number; 
+  offset: number; // distance from start of the wall segment
   width: number;
   height: number;
   sillHeight?: number; // for windows
@@ -12,8 +15,8 @@ export interface Feature {
 export interface Furniture {
   id: string;
   type: 'bed' | 'sofa' | 'table' | 'toilet' | 'sink' | 'counter';
-  x: number; // relative to room
-  y: number; // relative to room
+  x: number; // relative to room origin
+  y: number; // relative to room origin
   width: number;
   depth: number;
   rotation: number;
@@ -22,11 +25,16 @@ export interface Furniture {
 export interface Room {
   id: string;
   name: string;
-  x: number; // in feet
+  x: number; // in feet (bounding box top-left)
   y: number; // in feet
-  width: number; // in feet
-  height: number; // in feet
-  type: 'bedroom' | 'bathroom' | 'living' | 'kitchen' | 'garage' | 'other';
+  width: number; // in feet (bounding box width)
+  height: number; // in feet (bounding box height)
+  
+  // NEW: Support for irregular shapes (L-shaped, Diagonal walls)
+  shape?: 'rectangle' | 'polygon';
+  vertices?: {x: number, y: number}[]; // Relative to room (x,y)
+  
+  type: 'bedroom' | 'bathroom' | 'living' | 'kitchen' | 'garage' | 'hallway' | 'other';
   features: Feature[];
   furniture?: Furniture[];
 }
@@ -39,7 +47,7 @@ export interface Blueprint {
 
 export interface Violation {
   id: string;
-  codeSection: string; // e.g., "IRC R310.1"
+  codeSection: string; 
   description: string;
   currentValue: string;
   requiredValue: string;
@@ -50,7 +58,7 @@ export interface Violation {
 }
 
 export interface ComplianceResult {
-  score: number; // 0-100
+  score: number; 
   summary: string;
   location: string;
   codeAuthority: string;

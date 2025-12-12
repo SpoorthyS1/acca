@@ -3,6 +3,33 @@ import { GoogleGenAI } from "@google/genai";
 import { ComplianceResult, AnalysisRequest } from "../types";
 import { SYSTEM_INSTRUCTION, MODEL_NAME } from "../constants";
 
+// Helper to compress images to avoid payload limits (Fixes "Rpc failed" errors)
+const compressImage = async (base64Str: string, maxWidth = 1024): Promise<string> => {
+    return new Promise((resolve) => {
+        const img = new Image();
+        img.src = `data:image/jpeg;base64,${base64Str}`;
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const scaleSize = maxWidth / img.width;
+            if (scaleSize >= 1) {
+                resolve(base64Str); // No resize needed
+                return;
+            }
+            canvas.width = maxWidth;
+            canvas.height = img.height * scaleSize;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                resolve(base64Str);
+                return;
+            }
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            const compressed = canvas.toDataURL('image/jpeg', 0.7).split(',')[1];
+            resolve(compressed);
+        };
+        img.onerror = () => resolve(base64Str); // Fallback
+    });
+};
+
 export const analyzeDesign = async (request: AnalysisRequest): Promise<ComplianceResult> => {
   const apiKey = process.env.API_KEY;
   if (!apiKey) {
@@ -20,40 +47,44 @@ export const analyzeDesign = async (request: AnalysisRequest): Promise<Complianc
       
       ACTION: 
       1. Extract the City, State, and Country.
-      2. Research the SPECIFIC building codes for this location (e.g. "NBC 2016", "IBC 2021", "Dubai Building Code").
-      3. Use these exact codes for the compliance audit.`
+      2. Identify the governing building codes (e.g. "IRC 2021", "California Building Code").
+      `
   });
 
   // 2. Input Processing (Image or Text)
   if (request.imageData && request.mimeType) {
+    // Compress image before sending to prevent XHR/Payload errors
+    const processedImage = await compressImage(request.imageData);
+    
     parts.push({
       inlineData: {
-        data: request.imageData,
-        mimeType: request.mimeType
+        data: processedImage,
+        mimeType: "image/jpeg" // Always send as jpeg after compression
       }
     });
     parts.push({
-      text: `PHASE 2: PRECISION BLUEPRINT ANALYSIS
-      ACTION: Analyze the uploaded image with EXTREME ACCURACY.
-      - Extract exact measurements for rooms, doors, and windows.
-      - Identify structural elements and furniture.
-      - Map this data to the 'originalBlueprint' JSON structure.`
+      text: `PHASE 2: STRICT FIDELITY EXTRACTION
+      ACTION: Analyze the image.
+      - Trace the "originalBlueprint" EXACTLY as drawn.
+      - If a door is missing in the image, the "originalBlueprint" MUST NOT have that door.
+      - If a room is too small, draw it too small.
+      - Do not apply fixes yet.`
     });
   } else if (request.textPrompt) {
     parts.push({
-      text: `PHASE 2: GENERATIVE ARCHITECTURAL DESIGN
+      text: `PHASE 2: GENERATIVE DESIGN
       Design Brief: "${request.textPrompt}"
-      ACTION: Generate a detailed floor plan that meets the brief and adheres to the local codes identified in Phase 1.`
+      ACTION: Generate an initial layout.`
     });
   }
 
   // 3. Audit & Correction
   parts.push({
-      text: `PHASE 3: COMPLIANCE AUDIT & 3D MODELING
+      text: `PHASE 3: AUDIT & CORRECTION
       ACTION:
-      1. Compare the 'originalBlueprint' against the identified local codes (Setbacks, Room Sizes, Egress).
-      2. Create a 'correctedBlueprint' fixing any violations.
-      3. Generate the final JSON object containing 2D, 3D, and Compliance data.`
+      1. Audit "originalBlueprint" against the codes found in Phase 1.
+      2. Generate "correctedBlueprint" where ALL violations are resolved (e.g., widen doors, add windows, expand rooms).
+      3. Return the JSON.`
   });
 
   try {
@@ -61,7 +92,9 @@ export const analyzeDesign = async (request: AnalysisRequest): Promise<Complianc
       model: MODEL_NAME,
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
-        tools: [{ googleSearch: {} }], 
+        // Removed googleSearch tool to allow use of responseMimeType: 'application/json'
+        // This forces the model to output valid JSON only, preventing parsing errors.
+        responseMimeType: 'application/json',
       },
       contents: {
         parts: parts
@@ -71,17 +104,22 @@ export const analyzeDesign = async (request: AnalysisRequest): Promise<Complianc
     const text = response.text;
     if (!text) throw new Error("No response from AI");
 
-    // Robust JSON extraction
-    let jsonStr = text;
-    
-    // Attempt to extract JSON from markdown blocks or raw text
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-        jsonStr = jsonMatch[0];
+    // Clean up potential markdown formatting if the model slips up (though MIME type usually fixes this)
+    let jsonStr = text.trim();
+    if (jsonStr.startsWith('```json')) {
+        jsonStr = jsonStr.replace(/^```json/, '').replace(/```$/, '');
+    } else if (jsonStr.startsWith('```')) {
+        jsonStr = jsonStr.replace(/^```/, '').replace(/```$/, '');
     }
 
     try {
         const result = JSON.parse(jsonStr) as ComplianceResult;
+        
+        // Data Integrity Check
+        if (!result.originalBlueprint || !result.correctedBlueprint) {
+            throw new Error("Incomplete blueprint data received");
+        }
+        
         return result;
     } catch (parseError) {
         console.error("Failed to parse JSON:", jsonStr);

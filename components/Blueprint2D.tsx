@@ -1,47 +1,25 @@
 
 import React from 'react';
-import { Blueprint, Violation } from '../types';
+import { Blueprint, Room, Violation } from '../types';
 
 interface Blueprint2DProps {
   original: Blueprint;
   corrected: Blueprint;
   violations: Violation[];
-}
-
-// Helper to draw a dimension line
-const DimensionLine: React.FC<{ x1: number, y1: number, x2: number, y2: number, text: string, offset?: number, vertical?: boolean }> = ({ x1, y1, x2, y2, text, offset = 0, vertical = false }) => {
-    const ox = vertical ? offset : 0;
-    const oy = vertical ? 0 : offset;
-    
-    return (
-        <g>
-            {/* Main Line */}
-            <line x1={x1 + ox} y1={y1 + oy} x2={x2 + ox} y2={y2 + oy} stroke="#64748b" strokeWidth="0.05" />
-            {/* Extension Lines */}
-            <line x1={x1} y1={y1} x2={x1 + ox} y2={y1 + oy} stroke="#64748b" strokeWidth="0.02" strokeDasharray="0.1 0.1" opacity={0.5} />
-            <line x1={x2} y1={y2} x2={x2 + ox} y2={y2 + oy} stroke="#64748b" strokeWidth="0.02" strokeDasharray="0.1 0.1" opacity={0.5} />
-            {/* Ticks */}
-            <line x1={x1 + ox - 0.2} y1={y1 + oy - (vertical?0:0.2)} x2={x1 + ox + 0.2} y2={y1 + oy + (vertical?0:0.2)} stroke="#64748b" strokeWidth="0.05" />
-            <line x1={x2 + ox - 0.2} y1={y2 + oy - (vertical?0:0.2)} x2={x2 + ox + 0.2} y2={y2 + oy + (vertical?0:0.2)} stroke="#64748b" strokeWidth="0.05" />
-            {/* Text */}
-            <text 
-                x={(x1 + x2)/2 + ox} 
-                y={(y1 + y2)/2 + oy} 
-                fontSize="0.4" 
-                fill="#94a3b8" 
-                textAnchor="middle" 
-                alignmentBaseline="middle"
-                dy={vertical ? 0 : -0.2}
-                dx={vertical ? 0.2 : 0}
-                fontFamily="monospace"
-            >
-                {text}
-            </text>
-        </g>
-    )
+  showFixes: boolean;
 }
 
 const RenderBlueprintSVG: React.FC<{ blueprint: Blueprint; violations?: Violation[]; isOriginal: boolean }> = ({ blueprint, violations, isOriginal }) => {
+    if (!blueprint) {
+        return (
+            <div className="w-full h-full flex items-center justify-center">
+                <span className="text-slate-600 text-xs font-mono uppercase tracking-widest border border-slate-700 px-3 py-2 rounded">
+                    Data Unavailable
+                </span>
+            </div>
+        );
+    }
+
     const padding = 5;
     const totalWidth = blueprint.plotWidth + padding * 2;
     const totalHeight = blueprint.plotDepth + padding * 2;
@@ -81,130 +59,147 @@ const RenderBlueprintSVG: React.FC<{ blueprint: Blueprint; violations?: Violatio
             const wallStroke = hasViolations ? "#f87171" : (isOriginal ? "#94a3b8" : "#22d3ee");
             const fill = hasViolations ? "rgba(248, 113, 113, 0.1)" : "transparent";
 
+            // Determine geometry
+            const isPolygon = room.shape === 'polygon' && room.vertices && room.vertices.length > 0;
+            
             return (
               <g key={room.id} transform={`translate(${room.x}, ${room.y})`}>
-                {/* Room Floor */}
-                <rect
-                  x={0} y={0}
-                  width={room.width}
-                  height={room.height}
-                  fill={fill}
-                  stroke="none"
-                />
+                
+                {isPolygon ? (
+                    // Polygon Render
+                    <polygon
+                        points={room.vertices!.map(v => `${v.x},${v.y}`).join(' ')}
+                        fill={fill}
+                        stroke={wallStroke}
+                        strokeWidth="0.6"
+                    />
+                ) : (
+                    // Rectangle Render
+                     <rect
+                        x={0} y={0}
+                        width={room.width}
+                        height={room.height}
+                        fill={fill}
+                        stroke={wallStroke}
+                        strokeWidth="0.6"
+                    />
+                )}
 
-                {/* Walls (Double Line CAD Style) */}
-                <rect
-                  x={0} y={0}
-                  width={room.width}
-                  height={room.height}
-                  fill="none"
-                  stroke={wallStroke}
-                  strokeWidth="0.6" // Outer thick line
-                />
-                 <rect
-                  x={0.25} y={0.25}
-                  width={room.width - 0.5}
-                  height={room.height - 0.5}
-                  fill="none"
-                  stroke="#020617" // Gap
-                  strokeWidth="0.4"
-                />
-                {/* Inner visible line */}
-                 <rect
-                  x={0.25} y={0.25}
-                  width={room.width - 0.5}
-                  height={room.height - 0.5}
-                  fill="none"
-                  stroke={wallStroke}
-                  strokeWidth="0.05"
-                  opacity={0.5}
-                />
+                {/* Inner Line for CAD look */}
+                {isPolygon ? (
+                    <polygon
+                        points={room.vertices!.map(v => `${v.x},${v.y}`).join(' ')}
+                        fill="none"
+                        stroke={wallStroke}
+                        strokeWidth="0.05"
+                        opacity={0.5}
+                        transform="scale(0.98) translate(0.1, 0.1)" // Rough inner offset
+                    />
+                ) : (
+                    <rect
+                        x={0.25} y={0.25}
+                        width={room.width - 0.5}
+                        height={room.height - 0.5}
+                        fill="none"
+                        stroke={wallStroke}
+                        strokeWidth="0.05"
+                        opacity={0.5}
+                    />
+                )}
 
                 {/* Features (Windows/Doors) */}
                 {room.features.map((f, idx) => {
-                   let fx = 0, fy = 0, fw = 0, fh = 0;
+                   let fx = 0, fy = 0, fw = 0, fh = 0, rot = 0;
                    const wallThick = 0.6;
                    
-                   if (f.wall === 'top') { fx = f.offset; fy = -wallThick/2; fw = f.width; fh = wallThick; }
-                   if (f.wall === 'bottom') { fx = f.offset; fy = room.height - wallThick/2; fw = f.width; fh = wallThick; }
-                   if (f.wall === 'left') { fx = -wallThick/2; fy = f.offset; fw = wallThick; fh = f.width; } 
-                   if (f.wall === 'right') { fx = room.width - wallThick/2; fy = f.offset; fw = wallThick; fh = f.width; }
+                   if (isPolygon && typeof f.wall === 'number' && room.vertices) {
+                       // Polygon Feature Logic
+                       // CRITICAL FIX: Bounds check
+                       if (f.wall < 0 || f.wall >= room.vertices.length) return null;
 
-                   const isWindow = f.type === 'window';
+                       const v1 = room.vertices[f.wall];
+                       const v2 = room.vertices[(f.wall + 1) % room.vertices.length];
+                       
+                       // CRITICAL FIX: Existence check
+                       if (!v1 || !v2) return null;
+
+                       const dx = v2.x - v1.x;
+                       const dy = v2.y - v1.y;
+                       const len = Math.sqrt(dx*dx + dy*dy);
+                       const angle = Math.atan2(dy, dx) * (180/Math.PI);
+                       
+                       // Normalize vector
+                       const nx = dx/len;
+                       const ny = dy/len;
+
+                       // Position: Start + Offset * direction
+                       fx = v1.x + nx * f.offset;
+                       fy = v1.y + ny * f.offset;
+                       fw = f.width;
+                       fh = wallThick;
+                       rot = angle;
+                   } else {
+                       // Rectangle Logic
+                       if (f.wall === 'top') { fx = f.offset; fy = -wallThick/2; fw = f.width; fh = wallThick; }
+                       if (f.wall === 'bottom') { fx = f.offset; fy = room.height - wallThick/2; fw = f.width; fh = wallThick; }
+                       if (f.wall === 'left') { fx = -wallThick/2; fy = f.offset; fw = wallThick; fh = f.width; } 
+                       if (f.wall === 'right') { fx = room.width - wallThick/2; fy = f.offset; fw = wallThick; fh = f.width; }
+                   }
 
                    return (
-                       <g key={idx}>
-                           {/* Punch hole in wall */}
-                           <rect x={fx} y={fy} width={fw} height={fh} fill="#020617" stroke="none"/>
-                           
-                           {isWindow ? (
-                               // Window Symbol
-                               <g>
-                                   <rect x={fx} y={fy} width={fw} height={fh} fill="#0ea5e9" fillOpacity={0.2} stroke="#0ea5e9" strokeWidth="0.05"/>
-                                   {/* Mullion */}
-                                   {f.wall === 'top' || f.wall === 'bottom' ? (
-                                       <line x1={fx} y1={fy+fh/2} x2={fx+fw} y2={fy+fh/2} stroke="#0ea5e9" strokeWidth="0.05" />
-                                   ) : (
-                                       <line x1={fx+fw/2} y1={fy} x2={fx+fw/2} y2={fy+fh} stroke="#0ea5e9" strokeWidth="0.05" />
-                                   )}
-                               </g>
+                       <g key={idx} transform={`translate(${fx}, ${fy}) rotate(${rot})`}>
+                           {isPolygon ? (
+                               <>
+                                <rect x={0} y={-wallThick/2} width={fw} height={fh} fill="#020617" stroke="none" />
+                                {f.type === 'window' ? (
+                                    <g>
+                                        <rect x={0} y={-wallThick/2} width={fw} height={fh} fill="#0ea5e9" fillOpacity={0.2} stroke="#0ea5e9" strokeWidth="0.05"/>
+                                        <line x1={0} y1={0} x2={fw} y2={0} stroke="#0ea5e9" strokeWidth="0.05" />
+                                    </g>
+                                ) : (
+                                    <g>
+                                         <rect x={0} y={-wallThick/2} width={fw} height={fh} fill="none" stroke="#d97706" strokeWidth="0.05"/>
+                                         {/* Simple Door Swing */}
+                                         <path d={`M ${fw} ${wallThick/2} Q ${fw} ${-fw} 0 ${-fw} L 0 ${wallThick/2}`} fill="none" stroke="#d97706" strokeWidth="0.05" strokeDasharray="0.1 0.1"/>
+                                         <line x1={0} y1={wallThick/2} x2={0} y2={-fw} stroke="#d97706" strokeWidth="0.1"/>
+                                    </g>
+                                )}
+                               </>
                            ) : (
-                               // Door Symbol
-                               <g>
-                                    {/* Door jambs */}
-                                    <rect x={fx} y={fy} width={fw} height={fh} fill="none" stroke="#d97706" strokeWidth="0.05"/>
-                                    {/* Swing Arc - simplified logic assuming standard swing */}
-                                    <path 
-                                        d={f.wall === 'bottom' || f.wall === 'top' 
-                                            ? `M ${fx} ${fy+fh/2} Q ${fx} ${fy+fh/2-f.width} ${fx+f.width} ${fy+fh/2-f.width} L ${fx+f.width} ${fy+fh/2}`
-                                            : `M ${fx+fw/2} ${fy} Q ${fx+fw/2+f.width} ${fy} ${fx+fw/2+f.width} ${fy+f.width} L ${fx+fw/2} ${fy+f.width}`
-                                        }
-                                        fill="none" stroke="#d97706" strokeWidth="0.02" strokeDasharray="0.1 0.1"
-                                    />
-                                    {/* Door Leaf */}
-                                    {f.wall === 'bottom' || f.wall === 'top' ? (
-                                         <line x1={fx} y1={fy+fh/2} x2={fx} y2={fy+fh/2-f.width} stroke="#d97706" strokeWidth="0.1"/>
-                                    ) : (
-                                         <line x1={fx+fw/2} y1={fy} x2={fx+fw/2+f.width} y2={fy} stroke="#d97706" strokeWidth="0.1"/>
-                                    )}
-                               </g>
+                                <g>
+                                   <rect x={0} y={0} width={fw} height={fh} fill="#020617" stroke="none"/>
+                                   {f.type === 'window' ? (
+                                       <g>
+                                           <rect x={0} y={0} width={fw} height={fh} fill="#0ea5e9" fillOpacity={0.2} stroke="#0ea5e9" strokeWidth="0.05"/>
+                                           {f.wall === 'top' || f.wall === 'bottom' ? (
+                                               <line x1={0} y1={fh/2} x2={fw} y2={fh/2} stroke="#0ea5e9" strokeWidth="0.05" />
+                                           ) : (
+                                               <line x1={fw/2} y1={0} x2={fw/2} y2={fh} stroke="#0ea5e9" strokeWidth="0.05" />
+                                           )}
+                                       </g>
+                                   ) : (
+                                       <g>
+                                            <rect x={0} y={0} width={fw} height={fh} fill="none" stroke="#d97706" strokeWidth="0.05"/>
+                                            <line x1={fw/2} y1={fh/2} x2={fw/2+fw} y2={fh/2} stroke="#d97706" strokeWidth="0.05" opacity={0}/>
+                                       </g>
+                                   )}
+                                </g>
                            )}
                        </g>
                    )
                 })}
 
-                {/* Text Labels */}
                 <text x={room.width/2} y={room.height/2} fontSize="0.7" fill="#f8fafc" textAnchor="middle" fontWeight="bold">
                     {room.name.toUpperCase()}
-                </text>
-                 <text x={room.width/2} y={room.height/2 + 0.8} fontSize="0.4" fill="#94a3b8" textAnchor="middle">
-                    {room.width}' x {room.height}'
                 </text>
               </g>
             );
           })}
-          
-           {/* Overall Dimensions (Example on first room for cleaner look) */}
-           {blueprint.rooms.length > 0 && (
-               <>
-                <DimensionLine 
-                    x1={blueprint.rooms[0].x} y1={blueprint.rooms[0].y + blueprint.rooms[0].height} 
-                    x2={blueprint.rooms[0].x + blueprint.rooms[0].width} y2={blueprint.rooms[0].y + blueprint.rooms[0].height} 
-                    text={`${blueprint.rooms[0].width}'`} offset={1.5} 
-                />
-                <DimensionLine 
-                    x1={blueprint.rooms[0].x} y1={blueprint.rooms[0].y} 
-                    x2={blueprint.rooms[0].x} y2={blueprint.rooms[0].y + blueprint.rooms[0].height} 
-                    text={`${blueprint.rooms[0].height}'`} offset={-1.5} vertical
-                />
-               </>
-           )}
-
         </svg>
     )
 }
 
-const Blueprint2D: React.FC<Blueprint2DProps> = ({ original, corrected, violations }) => {
+const Blueprint2D: React.FC<Blueprint2DProps> = ({ original, corrected, violations, showFixes }) => {
   return (
     <div className="w-full h-full bg-slate-900 rounded-xl overflow-hidden relative shadow-2xl border border-slate-700 flex flex-col">
        <div className="absolute top-4 left-4 z-10 bg-slate-800/90 backdrop-blur px-3 py-1 rounded border border-slate-600 shadow-lg">
@@ -214,23 +209,30 @@ const Blueprint2D: React.FC<Blueprint2DProps> = ({ original, corrected, violatio
          </h3>
        </div>
 
-      <div className="flex-1 flex w-full h-full divide-x divide-slate-800">
-          {/* Left: Original */}
-          <div className="w-1/2 relative bg-[#020617] p-2">
+       {/* Conditional Render Logic: If showFixes is TRUE, split the view. If FALSE, show only Original */}
+       {showFixes ? (
+           <div className="flex-1 flex w-full h-full divide-x divide-slate-800">
+               <div className="w-1/2 relative bg-[#020617] p-2 border-r border-slate-800">
+                     <div className="absolute top-4 right-4 bg-red-500/10 text-red-400 text-[10px] font-mono px-2 py-1 rounded border border-red-500/20 uppercase tracking-wider z-10">
+                         Original (With Violations)
+                     </div>
+                     <RenderBlueprintSVG blueprint={original} violations={violations} isOriginal={true} />
+               </div>
+               <div className="w-1/2 relative bg-[#0f172a] p-2">
+                     <div className="absolute top-4 right-4 bg-emerald-500/10 text-emerald-400 text-[10px] font-mono px-2 py-1 rounded border border-emerald-500/20 uppercase tracking-wider z-10">
+                         Compliant (Fixes Applied)
+                     </div>
+                     <RenderBlueprintSVG blueprint={corrected} isOriginal={false} />
+               </div>
+           </div>
+       ) : (
+           <div className="flex-1 w-full h-full bg-[#020617] p-2 relative">
                 <div className="absolute top-4 right-4 bg-red-500/10 text-red-400 text-[10px] font-mono px-2 py-1 rounded border border-red-500/20 uppercase tracking-wider z-10">
-                    Original
+                    Original Audit
                 </div>
                 <RenderBlueprintSVG blueprint={original} violations={violations} isOriginal={true} />
-          </div>
-
-          {/* Right: Corrected */}
-          <div className="w-1/2 relative bg-[#0f172a] p-2">
-                <div className="absolute top-4 right-4 bg-emerald-500/10 text-emerald-400 text-[10px] font-mono px-2 py-1 rounded border border-emerald-500/20 uppercase tracking-wider z-10">
-                    Compliant
-                </div>
-                <RenderBlueprintSVG blueprint={corrected} isOriginal={false} />
-          </div>
-      </div>
+           </div>
+       )}
     </div>
   );
 };
